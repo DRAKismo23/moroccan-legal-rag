@@ -1,0 +1,29 @@
+# Virtual environment
+venv/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# Environment variables (API keys, secrets)
+.env
+
+# Data files (raw PDFs, processed chunks - can be large)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Qdrant local storage
+qdrant_storage/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# OS-specific junk files
+.DS_Store
+Thumbs.db
+
+# IDE settings
+.vscode/
+.idea/
