@@ -48,11 +48,28 @@ def find_content_start(text, marker="DISPOSITIONS PRELIMINAIRES"):
     return idx
 
 
+def trim_trailing_annex(text, marker="--- PAGE 126 ---"):
+    """
+    Some documents include transitional/amendment provisions after the
+    final article, with no article numbering of their own. We trim this
+    off so it doesn't pollute the last real article's content.
+
+    NOTE: this marker is specific to this document — other documents may
+    need their own trailing-annex check rather than assuming this applies.
+    """
+    idx = text.find(marker)
+    if idx == -1:
+        return text
+    removed_length = len(text) - idx
+    print(f"🗑️  Trimmed {removed_length} characters of trailing annex content (after '{marker}')")
+    return text[:idx]
+
+
 def split_into_articles(text):
     """
-    Splits legal text into a list of (article_number, article_text) dicts.
-    Only matches real article headings: capital 'Article', at the start of
-    a line, followed by 'premier' or a number.
+    Splits FRENCH legal text into a list of (article_number, article_text)
+    dicts. Only matches real article headings: capital 'Article', at the
+    start of a line, followed by 'premier' or a number.
     """
     pattern = re.compile(r'^Article\s+(premier|\d+)\s*$', re.MULTILINE)
 
@@ -65,6 +82,35 @@ def split_into_articles(text):
 
         # The article's content ends where the NEXT article begins
         # (or at the end of the whole text, for the very last article)
+        if i + 1 < len(matches):
+            end_pos = matches[i + 1].start()
+        else:
+            end_pos = len(text)
+
+        article_text = text[start_pos:end_pos].strip()
+        articles.append({
+            "number": article_number,
+            "text": article_text
+        })
+
+    return articles
+
+
+def split_into_articles_arabic(text, article_word="املادة"):
+    """
+    Splits ARABIC legal text into articles. Unlike French, Arabic PDFs
+    often extract with the NUMBER BEFORE the word (e.g. '5 المادة' instead
+    of 'المادة 5'), and may have leading whitespace before the number.
+    """
+    pattern = re.compile(r'^\s*(\d+)\s+' + re.escape(article_word) + r'\s*$', re.MULTILINE)
+
+    matches = list(pattern.finditer(text))
+    articles = []
+
+    for i, match in enumerate(matches):
+        article_number = match.group(1)
+        start_pos = match.end()
+
         if i + 1 < len(matches):
             end_pos = matches[i + 1].start()
         else:
@@ -158,6 +204,10 @@ def validate_articles(articles, max_reasonable_number=1000):
 
 
 if __name__ == "__main__":
+    print("=" * 60)
+    print("PROCESSING: Code Pénal (French)")
+    print("=" * 60)
+
     with open("data/processed/code_penal_fr_2023.txt", encoding="utf-8") as f:
         content = f.read()
 
@@ -180,3 +230,25 @@ if __name__ == "__main__":
     print(f"Text: {articles[-1]['text'][:300]}")
 
     validate_articles(articles)
+
+    print("\n\n" + "=" * 60)
+    print("PROCESSING: Code de la Route (Arabic)")
+    print("=" * 60)
+
+    with open("data/processed/code_route_ar_2024.txt", encoding="utf-8") as f:
+        ar_content = f.read()
+
+    ar_content = trim_trailing_annex(ar_content)
+
+    ar_articles = split_into_articles_arabic(ar_content)
+    print(f"Total articles found: {len(ar_articles)}")
+
+    print("\n--- First article ---")
+    print(f"Number: {ar_articles[0]['number']}")
+    print(f"Text: {ar_articles[0]['text'][:200]}")
+
+    print("\n--- Last article ---")
+    print(f"Number: {ar_articles[-1]['number']}")
+    print(f"Text: {ar_articles[-1]['text'][:200]}")
+
+    validate_articles(ar_articles)
