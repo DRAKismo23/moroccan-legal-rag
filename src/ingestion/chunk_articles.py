@@ -158,7 +158,6 @@ def split_into_articles_arabic_penal(text, base_word="الفصل"):
             base += "-ter" if "مرتين" in m.group(2) else "-bis"
         return base
 
-    # Filter out obvious mid-sentence references
     candidates = []
     for m in matches:
         num = build_number(m)
@@ -175,19 +174,12 @@ def split_into_articles_arabic_penal(text, base_word="الفصل"):
         if is_reference:
             continue
 
-        # This specific document has one article (content: abortion
-        # exemption provisions) whose real number could not be reliably
-        # recovered due to a footnote/page-number collision in the source
-        # PDF. Rather than guess, we flag it explicitly for manual review
-        # so it never silently collides with or displaces a real article.
         if num == "53" and "اإلجهاض" in text[m.end():m.end() + 200]:
             print("⚠️  Flagging unresolved article number (content: abortion provisions)")
             num = "53-UNRESOLVED-see-source"
 
         candidates.append((num, m))
 
-    # Build final article list, merging consecutive same-numbered matches
-    # (handles cases like Article 169 repeating its own heading mid-article)
     articles = []
     i = 0
     while i < len(candidates):
@@ -201,6 +193,80 @@ def split_into_articles_arabic_penal(text, base_word="الفصل"):
         end_pos = candidates[j][1].start() if j < len(candidates) else len(text)
         article_text = text[start_pos:end_pos].strip()
 
+        articles.append({"number": num, "text": article_text})
+        i = j
+
+    return articles
+
+
+def split_into_articles_arabic_cpp(text, base_word="المادة"):
+    """
+    Splits the ARABIC Code de Procédure Pénale into articles. Similar to
+    the Code Pénal, it uses word-before-number ordering with RTL-reversed
+    compound numbers for inserted 'bis' articles (e.g. raw '1-40' means
+    '40-1'). Filters out mid-sentence references using several directional
+    and citation marker words ('أعاله'/above, 'أدناه'/below, 'بعده'/after,
+    'بمقتضى'/by virtue of, and references to other laws/decrees).
+
+    KNOWN LIMITATIONS (documented rather than over-engineered away):
+      - A couple of articles repeat their own heading mid-article as an
+        apparent formatting quirk (same phenomenon as Article 169 in the
+        Code Pénal); these are merged like consecutive duplicates.
+    """
+    pattern = re.compile(
+        r'^\s*' + re.escape(base_word) +
+        r'\s*(\d+(?:\s*-\s*\d+)*)'
+        r'\s*$',
+        re.MULTILINE
+    )
+    matches = list(pattern.finditer(text))
+
+    def build_number(m):
+        nums = re.findall(r'\d+', m.group(1))
+        nums.reverse()
+        return "-".join(nums)
+
+    candidates = []
+    for m in matches:
+        num = build_number(m)
+        after = text[m.end():m.end() + 25].lstrip(" \n\t:؛")
+        after_no_newline = after.replace("\n", "")
+
+        is_reference = (
+            after[:1] in ".،"
+            or after_no_newline.startswith("أعاله")
+            or after_no_newline.startswith("أدناه")
+            or after_no_newline.startswith("بعده")
+            or after.startswith("من هذا")
+            or after.startswith("وذلك")
+            or after.startswith("بمقتضى")
+            or after.startswith("من المرسوم")
+            or after.startswith("من القانون")
+        )
+        if is_reference:
+            continue
+
+        # Same footnote/number-split issue as the Code Pénal's "53/534" case
+        if num == "2":
+            stray = text[m.end():m.end() + 3]
+            stripped = stray.strip()
+            if re.match(r'^\d(?!\d)', stripped):
+                num = "2" + stripped[0]
+
+        candidates.append((num, m))
+
+    articles = []
+    i = 0
+    while i < len(candidates):
+        num, m = candidates[i]
+        start_pos = m.end()
+
+        j = i + 1
+        while j < len(candidates) and candidates[j][0] == num:
+            j += 1
+
+        end_pos = candidates[j][1].start() if j < len(candidates) else len(text)
+        article_text = text[start_pos:end_pos].strip()
         articles.append({"number": num, "text": article_text})
         i = j
 
@@ -355,3 +421,26 @@ if __name__ == "__main__":
     print(f"Text: {penal_ar_articles[-1]['text'][:150]}")
 
     validate_articles(penal_ar_articles)
+
+    print("\n\n" + "=" * 60)
+    print("PROCESSING: Code de Procédure Pénale (Arabic)")
+    print("=" * 60)
+
+    with open("data/processed/code_procedure_penale_ar_2025.txt", encoding="utf-8") as f:
+        cpp_content = f.read()
+
+    cpp_idx = cpp_content.find("الكتاب التمهيدي", 30000)
+    cpp_trimmed = cpp_content[cpp_idx:]
+
+    cpp_articles = split_into_articles_arabic_cpp(cpp_trimmed)
+    print(f"Total articles found: {len(cpp_articles)}")
+
+    print("\n--- First article ---")
+    print(f"Number: {cpp_articles[0]['number']}")
+    print(f"Text: {cpp_articles[0]['text'][:150]}")
+
+    print("\n--- Last article ---")
+    print(f"Number: {cpp_articles[-1]['number']}")
+    print(f"Text: {cpp_articles[-1]['text'][:150]}")
+
+    validate_articles(cpp_articles)
