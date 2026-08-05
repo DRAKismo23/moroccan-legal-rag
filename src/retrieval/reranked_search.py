@@ -10,13 +10,18 @@ RERANKER = CrossEncoder("BAAI/bge-reranker-v2-m3")
 print("Ready.\n")
 
 
-def rerank(query, candidates, top_k=3):
+def rerank(query, candidates, top_k=3, max_chars=1200):
     """
     Takes a list of (article, score) tuples from hybrid search and
     re-scores each one using the cross-encoder reranker for final,
     precise relevance ranking.
+
+    Article text is truncated to max_chars before reranking — cross-encoders
+    process the full query+document pair through every transformer layer,
+    so long documents are dramatically slower without necessarily improving
+    accuracy (relevant content is typically near the start of an article).
     """
-    pairs = [[query, article["text"]] for article, _ in candidates]
+    pairs = [[query, article["text"][:max_chars]] for article, _ in candidates]
     rerank_scores = RERANKER.predict(pairs)
 
     reranked = sorted(
